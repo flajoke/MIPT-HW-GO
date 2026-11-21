@@ -2,8 +2,6 @@
 
 Добавлен пакетный импорт транзакций через POST /api/transactions/bulk. Ledger использует каналы jobs/results, пул воркеров, WaitGroup и отдельный коллектор. Валидация и проверка бюджета выполняются прежним методом AddTransaction. Счётчики и общий список ошибок защищены sync.Mutex.
 
-Архитектура ДЗ 8 и отчёты/таймауты ДЗ 9 сохранены. PostgreSQL хранит данные, Redis кеширует отчёты. Gateway получает Service через ledger.Open(ctx), передаёт в HTTP-обработчики и закрывает ресурсы через closeFn.
-
 ## Запуск в PowerShell
 
 Нужны Go 1.22+ и запущенный Docker Desktop. Остановите предыдущий Gateway через Ctrl+C. Из корня MIPT_HW_GO:
@@ -13,10 +11,6 @@ docker compose -f .\homework-9\compose.yaml down
 cd .\homework-10
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 ```
-
-Если контейнеры ДЗ 9 уже остановлены, начинайте с cd. Скрипт поднимает PostgreSQL и Redis, применяет миграции Goose, запускает Gateway на :8080. PostgreSQL — localhost:15432, Redis — localhost:6379. Используется отдельный volume ДЗ 10: данные предыдущих лаб не переносятся и не удаляются.
-
-Терминал сервера оставьте открытым, проверки выполняйте во втором PowerShell.
 
 ## Новый эндпоинт
 
@@ -213,38 +207,3 @@ go run .
 При заданном GOBIN используйте Goose из этой папки. Фабрика не запускает миграции. Для отката последней миграции из homework-10: `& $goose -dir .\ledger\migrations postgres $env:DATABASE_URL down` (удалит соответствующую таблицу с данными).
 
 Compose создаёт базу cashapp. Остановка контейнеров: `docker compose down`. Volume сохранится; `docker compose down -v` удаляет данные и для обычной остановки не требуется.
-
-## Тесты
-
-Из homework-10:
-
-```powershell
-cd .\ledger
-go test ./... -race
-go vet ./...
-cd ..\gateway
-go test ./... -race
-go vet ./...
-```
-
-На Windows для -race нужен настроенный C-компилятор, поддерживаемый Go. Без него обычные тесты запускаются через `go test ./...`; гоночный детектор проверен при разработке.
-
-Проверяются смешанный импорт, пустой массив, неверные workers, ограничение числа одновременно работающих воркеров, конкурентный бюджет, отмена во время SQL и демонстрационной задержки, завершение пула, учёт успешной записи при отмене сразу после commit, JSON 200/400/504 и сохранение сводки middleware. Прежние тесты отчётов, валидации и HTTP продолжают работать.
-
-Интеграционные тесты требуют отдельной мигрированной базы *_test и Redis. Без TEST_DATABASE_URL они отмечаются SKIP. Ledger очищает тестовые таблицы. Из homework-10:
-
-```powershell
-docker compose exec postgres createdb -U postgres cashapp_test
-$env:TEST_DATABASE_URL = 'postgres://postgres:postgres@localhost:15432/cashapp_test?sslmode=disable'
-$env:TEST_REDIS_DB = '14'
-$env:REDIS_ADDR = 'localhost:6379'
-$env:BULK_WORK_DELAY = '0s'
-$env:REPORT_WORK_DELAY = '0s'
-& $goose -dir .\ledger\migrations postgres $env:TEST_DATABASE_URL up
-cd .\ledger
-go test ./... -race
-cd ..\gateway
-go test ./... -race
-```
-
-Если cashapp_test существует, повторный createdb не нужен. Модули проверяйте по очереди. Переменная $goose задаётся как в разделе ручного запуска.
